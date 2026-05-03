@@ -3,7 +3,11 @@ from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     CoordinatorEntity,
 )
-from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
+from homeassistant.components.sensor import (
+    SensorEntity,
+    SensorDeviceClass,
+    SensorStateClass,
+)
 from homeassistant.helpers.entity import generate_entity_id, EntityCategory
 from homeassistant.components.sensor import ENTITY_ID_FORMAT
 
@@ -176,6 +180,10 @@ class FusionSolarInverterSensor(CoordinatorEntity, SensorEntity):
         self._attr_state_class = state_class
         self._is_pv_signal = is_pv_signal
 
+        self._SIGNIFICANT_DROP_FRACTION = 0.25
+        self._RESET_NEAR_ZERO_THRESHOLD = 1
+        self._last_valid_value = None
+
         device_id = list(device_info["identifiers"])[0][1]
         safe_name = name.lower().replace(" ", "_")
         self.entity_id = generate_entity_id(
@@ -196,6 +204,19 @@ class FusionSolarInverterSensor(CoordinatorEntity, SensorEntity):
             return None
         if self._attr_device_class == SensorDeviceClass.ENUM:
             return str(value)
+        if (
+            self._attr_state_class == SensorStateClass.TOTAL_INCREASING
+            and self._last_valid_value is not None
+            and self._last_valid_value > 0
+            and value < self._last_valid_value
+        ):
+            drop_fraction = (self._last_valid_value - value) / self._last_valid_value
+            if (
+                drop_fraction > self._SIGNIFICANT_DROP_FRACTION
+                and value > self._RESET_NEAR_ZERO_THRESHOLD
+            ):
+                return None
+        self._last_valid_value = value
         return value
 
     @property

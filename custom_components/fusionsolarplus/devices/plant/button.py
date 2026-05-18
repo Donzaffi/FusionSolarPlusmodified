@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from datetime import timedelta
 from typing import Dict, Any
 
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -12,6 +13,10 @@ from ...device_handler import BaseDeviceHandler
 from ...const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
+
+LIVEDATA_DURATION_S  = 60   # FusionSolar remainTime
+LIVEDATA_INTERVAL_S  = 6   
+NORMAL_INTERVAL_S    = 15   # default coordinator interval
 
 
 class PlantButtonHandler(BaseDeviceHandler):
@@ -31,18 +36,18 @@ class PlantButtonHandler(BaseDeviceHandler):
 
 
 class FusionSolarRefreshButton(CoordinatorEntity, ButtonEntity):
-    """Button that forces a live data refresh on the FusionSolar plant.
+    """Button that activates FusionSolar live data mode for 60 seconds.
 
-    Without an active livedata subscription, FusionSolar caches energy-flow
-    data server-side. This button:
-      1. Subscribes to livedata -> backend updates every refreshPeriod seconds
-      2. Waits refreshPeriod + 1s for fresh data to be ready
-      3. Polls the coordinator -> HA gets the fresh data immediately
+    When pressed:
+      1. Subscribes to livedata -> FusionSolar backend updates every 2s
+      2. Temporarily sets coordinator update_interval to 2s
+      3. After 60s, restores the normal 15s interval
     """
 
     def __init__(self, coordinator, device_info):
         super().__init__(coordinator)
         self._attr_device_info = device_info
+        self._live_task = None
 
         device_id = list(device_info["identifiers"])[0][1]
         self._attr_unique_id = f"{device_id}_live_data"
@@ -56,26 +61,53 @@ class FusionSolarRefreshButton(CoordinatorEntity, ButtonEntity):
         )
 
     async def async_press(self) -> None:
-        """Subscribe to livedata, wait for fresh data, then poll coordinator."""
+        """Activate live data mode: poll every 2s for 60s then restore 15s."""
+        # Cancel any previous live session still running
+        if self._live_task and not self._live_task.done():
+            self._live_task.cancel()
+
         device_dn = list(self._attr_device_info["identifiers"])[0][1]
         client = self.hass.data[DOMAIN][self.coordinator.config_entry.entry_id]
 
-        # Step 1 - subscribe: forces FusionSolar backend to prepare fresh data
+        # Subscribe to livedata — backend will serve fresh data every 2s for 60s
         try:
             result = await self.hass.async_add_executor_job(
                 client.refresh_livedata, device_dn
             )
-            refresh_period = result.get("subscribeInfo", {}).get("refreshPeriod", 2)
-            _LOGGER.debug("Livedata subscribed - refreshPeriod=%ss", refresh_period)
+            info = result.get("subscribeInfo", {})
+            refresh_period = info.get("refreshPeriod", LIVEDATA_INTERVAL_S)
+            remain_time    = info.get("remainTime",  LIVEDATA_DURATION_S)
+            _LOGGER.debug(
+                "Livedata subscribed — refreshPeriod=%ss remainTime=%ss",
+                refresh_period, remain_time,
+            )
         except Exception as err:
             _LOGGER.warning("Livedata subscribe failed: %s", err)
-            refresh_period = 2
+            refresh_period = LIVEDATA_INTERVAL_S
+            remain_time    = LIVEDATA_DURATION_S
 
-        # Step 2 - wait for backend to serve fresh data
-        await asyncio.sleep(refresh_period + 1)
+        # Switch coordinator to fast mode and schedule restore
+        self._live_task = asyncio.ensure_future(
+            self._live_session(refresh_period, remain_time)
+        )
 
-        # Step 3 - poll: HA fetches the now-fresh data
+    async def _live_session(self, refresh_period: int, remain_time: int) -> None:
+        """Run fast poll for remain_time seconds then restore normal interval."""
+        _LOGGER.debug("Live session: fast poll every %ss for %ss", refresh_period, remain_time)
+
+        # Switch to fast interval
+        self.coordinator.update_interval = timedelta(seconds=refresh_period)
         await self.coordinator.async_request_refresh()
+
+        try:
+            await asyncio.sleep(remain_time)
+        except asyncio.CancelledError:
+            _LOGGER.debug("Live session cancelled")
+        finally:
+            # Always restore normal interval
+            self.coordinator.update_interval = timedelta(seconds=NORMAL_INTERVAL_S)
+            await self.coordinator.async_request_refresh()
+            _LOGGER.debug("Live session ended — restored %ss interval", NORMAL_INTERVAL_S)
 
     @property
     def available(self) -> bool:

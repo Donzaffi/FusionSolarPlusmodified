@@ -81,6 +81,7 @@ class FusionSolarPlantSensor(CoordinatorEntity, SensorEntity):
 
         self._SIGNIFICANT_DROP_FRACTION = 0.25
         self._RESET_NEAR_ZERO_THRESHOLD = 1
+        self._SPIKE_THRESHOLD_FRACTION = 0.25
         self._last_valid_value = None
         self._last_reset_time = None
         self.RESET_COOLDOWN = timedelta(hours=6)
@@ -109,6 +110,14 @@ class FusionSolarPlantSensor(CoordinatorEntity, SensorEntity):
             return None
         value = data.get(self._key)
         if value is None:
+            return None
+
+        # Suppress spikes: ignore values that jump more than 50% above the last known value
+        if (
+            self._last_valid_value is not None
+            and self._last_valid_value > 0
+            and value > self._last_valid_value * (1 + self._SPIKE_THRESHOLD_FRACTION)
+        ):
             return None
 
         if (

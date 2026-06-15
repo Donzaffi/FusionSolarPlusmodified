@@ -1,5 +1,5 @@
 
-![Logo](https://raw.githubusercontent.com/JortvanSchijndel/FusionSolarPlus/refs/heads/master/branding/logo.png)
+![Logo](https://raw.githubusercontent.com/JortvanSchijndel/FusionSolarPlus/refs/heads/master/custom_components/fusionsolarplus/brand/logo.png)
 
 <table align="center" border="0">
   <tr>
@@ -1321,6 +1321,12 @@ To contribute or run FusionSolarPlus locally, follow these steps:
    - Type `Dev Containers: Rebuild and Reopen in Container` and press Enter.
 
 This will set up a reproducible development environment with all dependencies installed and Home Assistant will be accessible at http://localhost:8123.
+
+# ❤️ Sponsors
+Special thanks to my sponsors!<br>
+<a href="https://github.com/wichtounet"><img src="https://images.weserv.nl/?url=github.com/wichtounet.png&mask=hexagon&w=80&h=80"/></a>
+<a href="https://github.com/roman893"><img src="https://images.weserv.nl/?url=github.com/roman893.png&mask=hexagon&w=80&h=80"/></a>
+<br>Want to join them? Check out my sponsor page [here!](https://github.com/sponsors/JortvanSchijndel)
 
 # Legal Notice
 This integration for Home Assistant uses a custom modified version of [FusionSolarPy](https://github.com/jgriss/FusionSolarPy).

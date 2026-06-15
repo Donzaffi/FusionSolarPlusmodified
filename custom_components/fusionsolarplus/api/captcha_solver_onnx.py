@@ -11,7 +11,7 @@ class Solver(object):
         self.hass = hass
         self.last_rate_limit = 0
 
-    RATE_LIMIT_COOLDOWN = 6 * 60 * 60  # 6-hour cooldown
+    RATE_LIMIT_COOLDOWN = 2 * 60 * 60  # 2-hour cooldown
 
     def solve_captcha_rest(self, img_bytes: bytes) -> str:
         """Send captcha image bytes to Nischay103/captcha_recognition via gradio_client."""
@@ -31,13 +31,34 @@ class Solver(object):
             tmp_path = tmp.name
 
         try:
-            client = Client("Nischay103/captcha_recognition")
-            result = client.predict(
-                input=handle_file(tmp_path),
-                api_name="/predict",
-            )
-            _LOGGER.debug("Captcha solved: %s", result)
-            return str(result).strip().upper()
+            try:
+                client = Client("eoeooe/starrednt4")
+                result = client.predict(
+                    input=handle_file(tmp_path),
+                    api_name="/recognize_captcha",
+                )
+                _LOGGER.debug("Captcha solved: %s", result)
+                return str(result).strip().upper()
+            except Exception as e:
+                _LOGGER.debug("First captcha client failed, trying second: %s", e)
+                try:
+                    client = Client("Nischay103/captcha_recognition")
+                    result = client.predict(
+                        img=handle_file(tmp_path),
+                        api_name="/predict",
+                    )
+                    _LOGGER.debug("Captcha solved: %s", result)
+                    return str(result).strip().upper()
+                except Exception as e2:
+                    _LOGGER.debug("Second captcha client failed, trying third: %s", e2)
+                    client = Client("NeerajCodz/image-captcha-solver")
+                    result = client.predict(
+                        input=handle_file(tmp_path),
+                        mdl="anuashok/ocr-captcha-v3",
+                        api_name="/predict",
+                    )
+                    _LOGGER.debug("Captcha solved: %s", result)
+                    return str(result).strip().upper()
         finally:
             os.remove(tmp_path)
 
@@ -55,5 +76,5 @@ class Solver(object):
             _LOGGER.error("Captcha solving failed: %s", e)
             self.last_rate_limit = time.time()
             raise FusionSolarRateLimit(
-                f"Captcha API failed, please try again in 6 hours: {e}"
+                f"Captcha API failed, please try again in 2 hours: {e}"
             )

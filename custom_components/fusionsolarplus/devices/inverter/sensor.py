@@ -3,7 +3,11 @@ from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     CoordinatorEntity,
 )
-from homeassistant.components.sensor import SensorEntity, SensorDeviceClass
+from homeassistant.components.sensor import (
+    SensorEntity,
+    SensorDeviceClass,
+    SensorStateClass,
+)
 from homeassistant.helpers.entity import generate_entity_id, EntityCategory
 from homeassistant.components.sensor import ENTITY_ID_FORMAT
 
@@ -30,8 +34,26 @@ class InverterDeviceHandler(BaseDeviceHandler):
         entities = []
         unique_ids = set()
 
+        # Check output mode to dynamically hide invalid entities
+        output_mode = None
+        if coordinator.data:
+            output_mode = coordinator.data.get("inverter_values", {}).get(21029)
+
+        skip_signal_ids = set()
+        if str(output_mode).strip() == "L/N":
+            # 10008 is generic grid voltage (now mirrored to 10011)
+            # 10012/10013/10015/10016 are Phase B and C metrics
+            skip_signal_ids.update([10008, 10012, 10013, 10015, 10016])
+        elif str(output_mode).strip() == "Three-phase four-wire system":
+            # Three-phase doesn't use the generic single-phase grid voltage entity
+            skip_signal_ids.add(10008)
+
         # Create normal inverter entities
         for signal in INVERTER_SIGNALS:
+            signal_id = int(signal["id"])
+            if signal_id in skip_signal_ids:
+                continue
+
             unique_id = f"{list(self.device_info['identifiers'])[0][1]}_{signal['id']}"
             if unique_id not in unique_ids:
                 entity = FusionSolarInverterSensor(
@@ -47,7 +69,6 @@ class InverterDeviceHandler(BaseDeviceHandler):
                 unique_ids.add(unique_id)
 
         self._create_pv_entities(coordinator, entities, unique_ids)
-
         self._create_optimizer_entities(coordinator, entities, unique_ids)
 
         return entities
@@ -176,6 +197,10 @@ class FusionSolarInverterSensor(CoordinatorEntity, SensorEntity):
         self._attr_state_class = state_class
         self._is_pv_signal = is_pv_signal
 
+        self._SIGNIFICANT_DROP_FRACTION = 0.25
+        self._RESET_NEAR_ZERO_THRESHOLD = 1
+        self._last_valid_value = None
+
         device_id = list(device_info["identifiers"])[0][1]
         safe_name = name.lower().replace(" ", "_")
         self.entity_id = generate_entity_id(
@@ -196,6 +221,19 @@ class FusionSolarInverterSensor(CoordinatorEntity, SensorEntity):
             return None
         if self._attr_device_class == SensorDeviceClass.ENUM:
             return str(value)
+        if (
+            self._attr_state_class == SensorStateClass.TOTAL_INCREASING
+            and self._last_valid_value is not None
+            and self._last_valid_value > 0
+            and value < self._last_valid_value
+        ):
+            drop_fraction = (self._last_valid_value - value) / self._last_valid_value
+            if (
+                drop_fraction > self._SIGNIFICANT_DROP_FRACTION
+                and value > self._RESET_NEAR_ZERO_THRESHOLD
+            ):
+                return None
+        self._last_valid_value = value
         return value
 
     @property

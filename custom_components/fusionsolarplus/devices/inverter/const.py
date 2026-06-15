@@ -114,6 +114,14 @@ INVERTER_SIGNALS = [
         "state_class": SensorStateClass.MEASUREMENT,
     },
     {
+        "id": 10008,
+        "name": "Grid voltage",
+        "unit": "V",
+        "custom_name": "Phase A Voltage",
+        "device_class": SensorDeviceClass.VOLTAGE,
+        "state_class": SensorStateClass.MEASUREMENT,
+    },
+    {
         "id": 10012,
         "name": "Phase B voltage",
         "unit": "V",

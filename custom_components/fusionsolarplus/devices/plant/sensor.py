@@ -1,10 +1,11 @@
 from typing import Dict, Any, List
+from datetime import datetime, timedelta
 
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
     CoordinatorEntity,
 )
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorEntity, SensorStateClass
 from homeassistant.helpers.entity import generate_entity_id
 from homeassistant.components.sensor import ENTITY_ID_FORMAT
 
@@ -78,6 +79,14 @@ class FusionSolarPlantSensor(CoordinatorEntity, SensorEntity):
         self._attr_device_class = device_class
         self._attr_state_class = state_class
 
+        self._SIGNIFICANT_DROP_FRACTION = 0.25
+        self._RESET_NEAR_ZERO_THRESHOLD = 1
+        self._SPIKE_THRESHOLD_FRACTION = 0.25
+        self._SPIKE_MIN_ABSOLUTE = 5.0  # Never flag a spike smaller than this
+        self._last_valid_value = None
+        self._last_reset_time = None
+        self.RESET_COOLDOWN = timedelta(hours=6)
+
         device_id = list(device_info["identifiers"])[0][1]
         safe_name = name.lower().replace(" ", "_")
         self.entity_id = generate_entity_id(
@@ -97,11 +106,51 @@ class FusionSolarPlantSensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self):
-        """Return normalized value produced by the plant API layer."""
         data = self.coordinator.data
         if not data:
             return None
-        return data.get(self._key)
+        value = data.get(self._key)
+        if value is None:
+            return None
+
+        # --- Spike suppression ---
+        if self._last_valid_value is not None and self._last_valid_value > 0:
+            absolute_jump = value - self._last_valid_value
+            relative_jump = absolute_jump / self._last_valid_value
+            if (
+                relative_jump > self._SPIKE_THRESHOLD_FRACTION
+                and absolute_jump > self._SPIKE_MIN_ABSOLUTE
+            ):
+                return None
+
+        # --- TOTAL_INCREASING drop / reset handling ---
+        if (
+            self._attr_state_class == SensorStateClass.TOTAL_INCREASING
+            and self._last_valid_value is not None
+            and self._last_valid_value > 0
+            and value < self._last_valid_value
+        ):
+            drop_fraction = (self._last_valid_value - value) / self._last_valid_value
+
+            is_near_zero = value <= self._RESET_NEAR_ZERO_THRESHOLD
+
+            # Check cooldown
+            in_cooldown = (
+                self._last_reset_time is not None
+                and datetime.utcnow() - self._last_reset_time < self.RESET_COOLDOWN
+            )
+
+            if drop_fraction > self._SIGNIFICANT_DROP_FRACTION:
+                if is_near_zero:
+                    if not in_cooldown:
+                        self._last_reset_time = datetime.utcnow()
+                    else:
+                        return None
+                else:
+                    return None
+
+        self._last_valid_value = value
+        return value
 
     @property
     def available(self):

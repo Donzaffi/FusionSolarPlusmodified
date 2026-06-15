@@ -110,7 +110,12 @@ def get_current_plant_data(client: Any, plant_id: str) -> dict:
                         try:
                             val = float(val_str.split(" ")[0])
                             # Positive = importing from grid, negative = exporting to grid
-                            data["flow_grid_power"] = val if is_import else -val
+                            val = val if is_import else -val
+
+                            if abs(val) < 1e-3:
+                                val = 0.0
+
+                            data["flow_grid_power"] = val
                         except ValueError:
                             pass
                     break
@@ -132,9 +137,19 @@ def get_current_plant_data(client: Any, plant_id: str) -> dict:
                         for lnk in links
                     )
                     if is_export:
-                        data["flow_grid_power"] = -float(grid_val)
+                        val = -float(grid_val)
+
+                        if abs(val) < 1e-3:
+                            val = 0.0
+
+                        data["flow_grid_power"] = val
                     elif is_import:
-                        data["flow_grid_power"] = float(grid_val)
+                        val = float(grid_val)
+
+                        if abs(val) < 1e-3:
+                            val = 0.0
+
+                        data["flow_grid_power"] = val
 
     data.update(
         {

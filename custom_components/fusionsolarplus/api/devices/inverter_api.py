@@ -186,6 +186,14 @@ def _extract_inverter_values(realtime_data: dict) -> dict[int, Any]:
             values[int(signal_id)] = _normalize_signal_value(
                 raw_value, signal.get("unit"), signal.get("name")
             )
+
+    # API Layer Normalize: If single-phase L/N, mirror grid voltage (10008) into phase A voltage (10011)
+    # Output mode is signal ID 21029
+    output_mode = values.get(21029)
+    if output_mode and str(output_mode).strip() == "L/N":
+        if 10008 in values and values[10008] is not None:
+            values[10011] = values[10008]
+
     return values
 
 

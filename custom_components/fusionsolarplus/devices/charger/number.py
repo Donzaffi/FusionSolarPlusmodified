@@ -112,10 +112,20 @@ class FusionSolarChargerMaxPowerNumber(CoordinatorEntity, RestoreNumber):
         _LOGGER.debug("Setting max charge power %s → %.1f kW", device_dn, value)
         self._pending_value = value
         self.async_write_ha_state()
-        client = self.hass.data[DOMAIN][self.coordinator.config_entry.entry_id]
-        await self.hass.async_add_executor_job(
-            client.set_charger_max_charge_power, device_dn, value
-        )
+
+        handler = ChargerNumberHandler(self.hass, self.coordinator.config_entry, self._attr_device_info)
+        
+        async def send_command(client):
+            return await self.hass.async_add_executor_job(
+                client.set_charger_max_charge_power, device_dn, value
+            )
+
+        try:
+            await handler._get_client_and_retry(send_command)
+        except Exception as err:
+            _LOGGER.error("Setting max charge power failed: %s", err)
+            self._pending_value = None
+            self.async_write_ha_state()
 
     @property
     def available(self) -> bool:

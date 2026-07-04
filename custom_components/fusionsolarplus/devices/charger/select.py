@@ -110,10 +110,20 @@ class FusionSolarChargerWorkingModeSelect(CoordinatorEntity, SelectEntity, Resto
         _LOGGER.debug("Setting working mode %s → %s (%s)", device_dn, option, mode_key)
         self._pending_key = mode_key
         self.async_write_ha_state()
-        client = self.hass.data[DOMAIN][self.coordinator.config_entry.entry_id]
-        await self.hass.async_add_executor_job(
-            client.set_charger_working_mode, device_dn, mode_key
-        )
+        
+        handler = ChargerSelectHandler(self.hass, self.coordinator.config_entry, self._attr_device_info)
+        
+        async def send_command(client):
+            return await self.hass.async_add_executor_job(
+                client.set_charger_working_mode, device_dn, mode_key
+            )
+
+        try:
+            await handler._get_client_and_retry(send_command)
+        except Exception as err:
+            _LOGGER.error("Setting working mode failed: %s", err)
+            self._pending_key = None
+            self.async_write_ha_state()
 
     @property
     def available(self) -> bool:

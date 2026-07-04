@@ -26,8 +26,8 @@ from ...const import DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 SIGNAL_ID_MAX_CHARGE_POWER = 20001
-MIN_CHARGE_POWER_KW        = 4.1
-MAX_CHARGE_POWER_KW        = 11.0
+MIN_CHARGE_POWER_KW        = 1.4
+MAX_CHARGE_POWER_KW        = 2.5
 
 
 # ── Handler ───────────────────────────────────────────────────────────────────
